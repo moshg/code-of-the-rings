@@ -14,7 +14,19 @@ func main() {
 	scanner.Scan()
 	var magicPhrase = scanner.Text()
 
+	if len(magicPhrase) == 0 {
+		fmt.Println()
+		return
+	}
+
 	var magicPhraseAsIntegers = magicPhraseToIntegers(magicPhrase)
+	for _, letter := range magicPhraseAsIntegers {
+		if letter < 0 || letter > 26 {
+			fmt.Println("Invalid input")
+			return
+		}
+	}
+
 	var instructions = solution(magicPhraseAsIntegers)
 
 	fmt.Println(instructions)
