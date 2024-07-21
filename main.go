@@ -48,25 +48,40 @@ func magicPhraseToIntegers(magicPhrase string) []int {
 // TODO: use the entire zones
 func solution(magicPhrase []int) string {
 	var repeats = compressMagicPhrase(magicPhrase)
+	var state = newState()
 
 	var instructions string
-	var currentLetter = 0
 	for _, repeat := range repeats {
-		instructions += roleSpells(currentLetter, repeat.letter)
-		instructions += triggerSpells(repeat.count)
-
-		currentLetter = repeat.letter
+		instructions += reachSpells(&state, repeat.letter)
+		instructions += triggerSpells(&state, repeat.count)
 	}
 
 	return instructions
 }
 
+////////////////////
+// Data types
+////////////////////
+
 type Letter = int
+
+const LETTERS = 27
+
+type Spells = string
 
 // A letter and the number of times it is repeated.
 type Repeat struct {
 	letter Letter
 	count  int
+}
+
+type State struct {
+	zones      []Letter
+	currentPos int
+}
+
+func newState() State {
+	return State{zones: make([]Letter, 30), currentPos: 0}
 }
 
 func compressMagicPhrase(magicPhrase []Letter) []Repeat {
@@ -89,60 +104,71 @@ func compressMagicPhrase(magicPhrase []Letter) []Repeat {
 }
 
 ////////////////////
-// Roll
+// Reach
 ////////////////////
 
-const LETTERS = 27
+// Calculate the spells to reach the target letter and update state.
+func reachSpells(state *State, letter Letter) Spells {
+	var bestPos = 0
+	var bestCount = LETTERS
+	var bestPosDir = 1
+	var bestPosOffset = 0
+	var bestLetterDir = 1
+	var bestLetterOffset = 0
+	for pos := 0; pos < len(state.zones); pos++ {
+		var currentPos = state.currentPos
 
-func roleSpells(current Letter, target Letter) string {
-	var rolePlusCount = calcRollPlusCount(current, target)
-	var roleMinusCount = calcRollMinusCount(current, target)
+		// move to pos from currentPos
+		var offset = pos - currentPos
+		var posDir = 1
+		var letterDir = 1
+		if offset < 0 {
+			offset = len(state.zones) + offset
+		}
+		if offset > len(state.zones)/2 {
+			posDir = -1
+			offset = len(state.zones) - offset
+		}
 
-	if rolePlusCount < roleMinusCount {
-		return calcRolePlusSpells(current, target)
+		// roll letter
+		var baseLetter = state.zones[pos]
+		var letterOffset = letter - baseLetter
+		if letterOffset < 0 {
+			letterOffset = LETTERS + letterOffset
+		}
+
+		if letterOffset > LETTERS/2 {
+			letterDir = -1
+			letterOffset = LETTERS - letterOffset
+		}
+
+		var count = offset + letterOffset
+		if count < bestCount {
+			bestPos = pos
+			bestCount = count
+			bestPosDir = posDir
+			bestPosOffset = offset
+			bestLetterDir = letterDir
+			bestLetterOffset = letterOffset
+		}
+	}
+
+	var spells Spells
+	if bestPosDir > 0 {
+		spells += strings.Repeat(">", bestPosOffset)
 	} else {
-		return calcRoleMinusSpells(current, target)
+		spells += strings.Repeat("<", bestPosOffset)
 	}
-}
+	if bestLetterDir > 0 {
+		spells += strings.Repeat("+", bestLetterOffset)
+	} else {
+		spells += strings.Repeat("-", bestLetterOffset)
+	}
 
-// Calculate the number of steps to roll the current letter to the target letter using only +.
-// e.g. ++++ for A to E
-func calcRollPlusCount(current Letter, target Letter) int {
-	var offset = target - current
-	if offset < 0 {
-		offset = LETTERS + offset
-	}
-	return offset
-}
+	state.currentPos = bestPos
+	state.zones[state.currentPos] = letter
 
-// Calculate the spells to roll the current letter to the target letter using only +.
-// e.g. ++++ for A to E
-func calcRolePlusSpells(current Letter, target Letter) string {
-	var offset = target - current
-	if offset < 0 {
-		offset = LETTERS + offset
-	}
-	return strings.Repeat("+", offset)
-}
-
-// Calculate the number of steps to roll the current letter to the target letter using only -.
-// e.g. ---- for E to A
-func calcRollMinusCount(current Letter, target Letter) int {
-	var offset = current - target
-	if offset < 0 {
-		offset = LETTERS + offset
-	}
-	return offset
-}
-
-// Calculate the spells to roll the current letter to the target letter using only -.
-// e.g. ---- for E to A
-func calcRoleMinusSpells(current Letter, target Letter) string {
-	var offset = current - target
-	if offset < 0 {
-		offset = LETTERS + offset
-	}
-	return strings.Repeat("-", offset)
+	return spells
 }
 
 ////////////////////
@@ -150,57 +176,101 @@ func calcRoleMinusSpells(current Letter, target Letter) string {
 ////////////////////
 
 // Spells to trigger the current letter.
-func triggerSpells(triggerCount int) string {
-	var triggerNaiveCount = calcTriggerNaiveCount(triggerCount)
-	var triggerLoopCount = calcTriggerLoopCount(triggerCount)
+// e.g. >+[<.>+]< for A * 26
+func triggerSpells(state *State, triggerCount int) string {
+	var bestCount = triggerCount
+	var bestPosDir = 1
+	var bestPos = 0
+	var bestLetterDir = 1
+	var bestLoopCount = 0
+	var bestRestCount = 0
 
-	if triggerNaiveCount < triggerLoopCount {
-		return calcTriggerNaiveSpells(triggerCount)
-	} else {
-		return calcTriggerLoopSpells(triggerCount)
+	for _, posDir := range []int{1, -1} {
+		var pos = state.currentPos + posDir
+		if pos < 0 {
+			pos = pos + len(state.zones)
+		} else if pos >= len(state.zones) {
+			pos = pos - len(state.zones)
+		}
+
+		var initLetter = state.zones[pos]
+
+		var letterDirs []int
+		if initLetter != 0 {
+			letterDirs = []int{1, -1}
+		} else {
+			letterDirs = []int{0}
+		}
+		for _, letterDir := range letterDirs {
+			var initCount int
+			if letterDir > 0 {
+				initCount = LETTERS - initLetter
+			} else if letterDir < 0 {
+				initCount = initLetter
+			} else {
+				initCount = 0
+			}
+
+			if triggerCount-initCount < 0 {
+				continue
+			}
+			var loopCount = (triggerCount - initCount) / 26
+			var restCount = (triggerCount - initCount) % 26
+
+			// >
+			var count = 1
+			if letterDir != 0 {
+				// [<.>+]
+				count += 6
+			}
+			// +[<.>+]
+			count += 6 * loopCount
+			// <
+			count += 1
+			// ...
+			count += restCount
+
+			if count < bestCount {
+				bestCount = count
+				bestPosDir = posDir
+				bestPos = pos
+				bestLetterDir = letterDir
+				bestLoopCount = loopCount
+				bestRestCount = restCount
+			}
+		}
 	}
-}
 
-// Calculate the number of steps to trigger the current letter.
-// e.g. ... for A * 3
-func calcTriggerNaiveCount(triggerCount int) int {
-	return triggerCount
-}
+	if bestCount == triggerCount {
+		return strings.Repeat(".", triggerCount)
+	}
 
-// Calculate the spells to trigger the current letter.
-// e.g. ... for AAA
-func calcTriggerNaiveSpells(triggerCount int) string {
-	return strings.Repeat(".", triggerCount)
-}
-
-// Calculate the number of steps to trigger the current letter using loop.
-// e.g. >+[<.>+]< for A * 26
-func calcTriggerLoopCount(triggerCount int) int {
-	var loopCount = triggerCount / 26
-	var restCount = triggerCount % 26
-
-	// >
-	var count = 1
+	var spells string
+	var f string
+	var b string
+	if bestPosDir > 0 {
+		f = ">"
+		b = "<"
+	} else {
+		f = "<"
+		b = ">"
+	}
+	spells += f
+	// [<.>+]
+	if bestLetterDir > 0 {
+		spells += "[" + b + "." + f + "+" + "]"
+		state.zones[bestPos] = 0
+	} else if bestLetterDir < 0 {
+		spells += "[" + b + "." + f + "-" + "]"
+		state.zones[bestPos] = 0
+	}
 	// +[<.>+]
-	count += 7 * loopCount
-	// <
-	count += 1
-	// ...
-	count += restCount
-
-	return count
-}
-
-// Calculate the spells to trigger the current letter using loop.
-// e.g. >+[<.>+]< for A * 26
-func calcTriggerLoopSpells(triggerCount int) string {
-	var loopCount = triggerCount / 26
-	var restCount = triggerCount % 26
-
-	var spells = ">"
-	spells += strings.Repeat("+[<.>+]", loopCount)
-	spells += "<"
-	spells += strings.Repeat(".", restCount)
+	spells += strings.Repeat("+"+"["+b+"."+f+"+"+"]", bestLoopCount)
+	if bestLoopCount > 0 {
+		state.zones[bestPos] = 0
+	}
+	spells += b
+	spells += strings.Repeat(".", bestRestCount)
 
 	return spells
 }
