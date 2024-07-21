@@ -48,9 +48,14 @@ func magicPhraseToIntegers(magicPhrase string) []int {
 // TODO: use the entire zones
 func solution(magicPhrase []int) string {
 	var repeats = compressMagicPhrase(magicPhrase)
-	var state = newState()
-
+	var state State
 	var instructions string
+	if len(repeats) < 100 {
+		state = newState()
+	} else {
+		state, instructions = shuffled()
+	}
+
 	for _, repeat := range repeats {
 		instructions += reachSpells(&state, repeat.letter)
 		instructions += triggerSpells(&state, repeat.count)
@@ -82,6 +87,16 @@ type State struct {
 
 func newState() State {
 	return State{zones: make([]Letter, 30), currentPos: 0}
+}
+
+func shuffled() (State, Spells) {
+	var state = newState()
+	for i := 0; i < len(state.zones)/2; i++ {
+		state.zones[i*2] = 26
+		state.zones[i*2+1] = 13
+	}
+	state.zones[0] = 0
+	return state, "+[<+<++]"
 }
 
 func compressMagicPhrase(magicPhrase []Letter) []Repeat {
