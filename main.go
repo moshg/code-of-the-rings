@@ -1,37 +1,36 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
 )
 
-func main() {
-	var scanner = bufio.NewScanner(os.Stdin)
-	// magicPhrase contains between 1 and 500 characters.
-	scanner.Buffer(make([]byte, 500), 500)
-	scanner.Scan()
-	var magicPhrase = scanner.Text()
+// func main() {
+// 	var scanner = bufio.NewScanner(os.Stdin)
+// 	// magicPhrase contains between 1 and 500 characters.
+// 	scanner.Buffer(make([]byte, 500), 500)
+// 	scanner.Scan()
+// 	var magicPhrase = scanner.Text()
 
-	if len(magicPhrase) == 0 {
-		fmt.Println()
-		return
-	}
+// 	if len(magicPhrase) == 0 {
+// 		fmt.Println()
+// 		return
+// 	}
 
-	var magicPhraseAsIntegers = MagicPhraseToIntegers(magicPhrase)
-	for _, letter := range magicPhraseAsIntegers {
-		if letter < 0 || letter > 26 {
-			fmt.Println("Invalid input")
-			return
-		}
-	}
+// 	var magicPhraseAsIntegers = MagicPhraseToIntegers(magicPhrase)
+// 	for _, letter := range magicPhraseAsIntegers {
+// 		if letter < 0 || letter > 26 {
+// 			fmt.Println("Invalid input")
+// 			return
+// 		}
+// 	}
 
-	var instructions = Solution(magicPhraseAsIntegers)
+// 	var instructions = Solution(magicPhraseAsIntegers)
 
-	fmt.Println(instructions)
-}
+// 	fmt.Println(instructions)
+// }
 
 func MagicPhraseToIntegers(magicPhrase string) []int {
 	var magicPhraseAsIntegers []int
@@ -45,25 +44,25 @@ func MagicPhraseToIntegers(magicPhrase string) []int {
 	return magicPhraseAsIntegers
 }
 
-func Solution(magicPhrase []int) string {
-	var repeats = CompressMagicPhrase(magicPhrase)
-	var state State
-	var instructions string
-	if len(repeats) < 100 {
-		state = NewState()
-	} else {
-		state, instructions = ShuffledState()
-	}
+// func Solution(magicPhrase []int) string {
+// 	var repeats = CompressMagicPhrase(magicPhrase)
+// 	var state State
+// 	var instructions string
+// 	if len(repeats) < 100 {
+// 		state = NewState()
+// 	} else {
+// 		state, instructions = ShuffledState()
+// 	}
 
-	// TODO: remove repeats with smaller count and longer letters
+// 	// TODO: remove repeats with smaller count and longer letters
 
-	for _, repeat := range repeats {
-		instructions += reachSpells(&state, repeat.letter)
-		instructions += triggerSpells(&state, repeat.count)
-	}
+// 	for _, repeat := range repeats {
+// 		instructions += reachSpells(&state, repeat.letter)
+// 		instructions += triggerSpells(&state, repeat.count)
+// 	}
 
-	return instructions
-}
+// 	return instructions
+// }
 
 ////////////////////
 // Data types
@@ -72,6 +71,15 @@ func Solution(magicPhrase []int) string {
 type Letter = int
 
 const LETTERS = 27
+
+// Returns the offset when rolling forward and backward.
+func letterOffsets(a, b Letter) (int, int) {
+	var offset = b - a
+	if offset < 0 {
+		offset = offset + LETTERS
+	}
+	return offset, LETTERS - offset
+}
 
 type Spells = string
 
@@ -100,6 +108,10 @@ func NextRepeats(letters []Letter, n int) []Repeat {
 	return repeats
 }
 
+////////////////////
+// State type
+////////////////////
+
 type State struct {
 	zones      []Letter
 	currentPos int
@@ -107,6 +119,31 @@ type State struct {
 
 func NewState() State {
 	return State{zones: make([]Letter, 30), currentPos: 0}
+}
+
+func (state *State) Clone() State {
+	var newZones = make([]Letter, len(state.zones))
+	copy(newZones, state.zones)
+	return State{zones: newZones, currentPos: state.currentPos}
+}
+
+func (state *State) CurrentLetter() Letter {
+	return state.zones[state.currentPos]
+}
+
+func (state *State) CurrentZone() *Letter {
+	return &state.zones[state.currentPos]
+}
+
+// Returns the letter at `pos` position.
+// Supports `-len(state.zones) <= pos < 2 * len(state.zones)`.
+func (state *State) Zone(pos int) Letter {
+	if pos < 0 {
+		pos = pos + len(state.zones)
+	} else if pos >= len(state.zones) {
+		pos = pos - len(state.zones)
+	}
+	return state.zones[pos]
 }
 
 func ShuffledState() (State, Spells) {
@@ -120,11 +157,27 @@ func ShuffledState() (State, Spells) {
 }
 
 ////////////////////
+// Area type
+////////////////////
+
+// Directional area within a zone
+type Area struct {
+	start  int
+	dir    int
+	length int
+}
+
+func (area *Area) At(state *State, i int) Letter {
+	return state.Zone(area.start + i*area.dir)
+}
+
+////////////////////
 // Simple spells
 ////////////////////
 
-// Returns the state that Blub moves to `pos` and the spells to Move.
-func Move(state *State, pos int) (State, Spells) {
+// Move to `pos` position.
+// Returns the state after the action and the spells to act.
+func (state *State) MoveTo(pos int) (State, Spells) {
 	// left to right
 	var offset = pos - state.currentPos
 	if offset < 0 {
@@ -138,23 +191,47 @@ func Move(state *State, pos int) (State, Spells) {
 	}
 }
 
-// Returns the state that Blub rolls the letter on the zone to `letter` and the spells to Roll.
-func Roll(state *State, letter Letter) (State, Spells) {
-	var baseLetter = state.zones[state.currentPos]
-	var letterOffset = letter - baseLetter
-	if letterOffset < 0 {
-		letterOffset = letterOffset + LETTERS
+// Move forward in the `dir` direction.
+// Returns the state after the action and the spells to act.
+func (state *State) MoveForward(dir int) (State, Spells) {
+	var spells Spells
+	if dir > 0 {
+		spells = ">"
+	} else {
+		spells = "<"
 	}
 
-	var newZones = make([]Letter, len(state.zones))
-	copy(newZones, state.zones)
-	newZones[state.currentPos] = letter
-	var newState = State{zones: newZones, currentPos: state.currentPos}
+	var pos = state.currentPos + dir
+	if pos < 0 {
+		pos = pos + len(state.zones)
+	} else if pos >= len(state.zones) {
+		pos = pos - len(state.zones)
+	}
 
-	if letterOffset <= LETTERS/2 {
-		return newState, strings.Repeat("+", letterOffset)
+	var nextState = State{zones: state.zones, currentPos: pos}
+	return nextState, spells
+}
+
+// Move backward in the `dir` direction.
+// Returns the state after the action and the spells to act.
+func (state *State) MoveBackward(dir int) (State, Spells) {
+	return state.MoveForward(-dir)
+}
+
+// Roll to the `letter`.
+// Returns the state after the action and the spells to act.
+func RollTo(state *State, letter Letter) (State, Spells) {
+	var baseLetter = state.CurrentLetter()
+	var offsetForward, offsetBackward = letterOffsets(baseLetter, letter)
+
+	var newState = state.Clone()
+	*state.CurrentZone() = letter
+
+	// Roll in the shorter direction
+	if offsetForward <= offsetBackward {
+		return newState, strings.Repeat("+", offsetForward)
 	} else {
-		return newState, strings.Repeat("-", LETTERS-letterOffset)
+		return newState, strings.Repeat("-", offsetBackward)
 	}
 }
 
@@ -162,45 +239,144 @@ func Roll(state *State, letter Letter) (State, Spells) {
 // Combined spells
 ////////////////////
 
-// Returns the state that `seq` is arranged at `seqStart` and the spells to arrange.
-func arrange(state *State, seq []Letter, moveStart int, moveDir, seqDir int) (State, Spells) {
+// Sequence type for alignment
+type Sequence struct {
+	letters []Letter
+	dir     int
+}
+
+func NewSequence(letters []Letter, dir int) Sequence {
+	return Sequence{letters: letters, dir: dir}
+}
+
+func (seq *Sequence) Len() int {
+	return len(seq.letters)
+}
+
+func (seq *Sequence) At(i int) Letter {
+	if seq.dir > 0 {
+		return seq.letters[i]
+	} else {
+		return seq.letters[len(seq.letters)-1-i]
+	}
+}
+
+// Roll the characters in `area` to match `seq`.
+func Align(state *State, area Area, seq Sequence) (State, Spells) {
 	// We assume seq is short, so we use arranging left to right approach simply.
 
-	// move to seqStart from currentPos
-	var currentState, spells = Move(state, moveStart)
+	var currentState = *state
+	var spells Spells
 
-	// roll letter
-	var rollSpells Spells
-	if seqDir > 0 {
-		currentState, rollSpells = Roll(&currentState, seq[0])
-	} else {
-		currentState, rollSpells = Roll(&currentState, seq[len(seq)-1])
-	}
-	spells += rollSpells
-
-	for i := 1; i < len(seq); i++ {
-		var targetLetter Letter
-		if seqDir > 0 {
-			targetLetter = seq[i]
-		} else {
-			targetLetter = seq[len(seq)-1-i]
+	var nextPos = area.start
+	for i := 0; i < seq.Len(); i++ {
+		// early return if arranged
+		if match(&currentState, area, seq) {
+			return currentState, spells
 		}
 
+		var targetLetter = seq.At(i)
+
 		// move to next
-		currentState, moveSpells := Move(&currentState, currentState.currentPos+moveDir)
+		currentState, moveSpells := currentState.MoveTo(nextPos)
 		spells += moveSpells
+		nextPos += area.dir
 
 		// roll letter
-		currentState, rollSpells := Roll(&currentState, targetLetter)
+		currentState, rollSpells := RollTo(&currentState, targetLetter)
 		spells += rollSpells
 	}
 
 	return currentState, spells
 }
 
+// Returns whether the characters in `area` match `seq`
+func match(state *State, area Area, seq Sequence) bool {
+	for i := 0; i < seq.Len(); i++ {
+		var targetLetter = seq.At(i)
+		var zoneLetter = area.At(state, i)
+		if zoneLetter != targetLetter {
+			return false
+		}
+	}
+	return true
+}
+
 ////////////////////
 // Trigger
 ////////////////////
+
+// Trigger the characters in area count times.
+func Trigger(state *State, area Area, count int) (State, Spells) {
+	// TODO: align "abbc" as "abc" and trigger ".>..>."
+
+	// ループカウンタがらんだむな初期値
+
+	var currentState, spells = state.Move(start)
+
+}
+
+func triggerRepeatWithLoop(state *State, start int, dir int, length int) (State, Spells) {
+	// TODO: double loop
+	if currentState.Zone(currentState.currentPos) != 0 {
+		var maxRoleDir int
+		if currentState.Zone(currentState.currentPos) > 13 {
+			maxRoleDir = -1
+		} else {
+			maxRoleDir = 1
+		}
+	}
+}
+
+func triggerSequenceWithLoop(state *State, dir int, length int, rollDir int) (State, Spells) {
+	var spells Spells = "["
+	var currentState = *state
+
+	spells += triggerAndReturn(&currentState, dir, length)
+}
+
+// Trigger in the direction of dir for length times from start, and return to the original position
+func triggerWithoutLoop(state *State, dir int, length int) (State, Spells) {
+	var currentState = *state
+	var spells Spells
+
+	// move to start
+	currentState, additionalSpells := currentState.Move(start)
+	spells += additionalSpells
+
+	for i := 0; i < length; i++ {
+		currentState, additionalSpells = triggerAndReturn(&currentState, dir, length)
+		spells += additionalSpells
+	}
+
+	return currentState, spells
+}
+
+// Trigger in the direction of dir for length times, and return to the original position
+func triggerAndReturn(state *State, dir int, length int) (State, Spells) {
+	// TODO: palindrome
+	var currentState = *state
+	var spells Spells = "."
+
+	for i := 1; i < length; i++ {
+		// move to next
+		var additionalSpells Spells
+		currentState, additionalSpells = Move(&currentState, currentState.currentPos+dir)
+		spells += additionalSpells
+
+		// trigger
+		spells += "."
+	}
+
+	for i := 1; i < length; i++ {
+		// move to previous
+		var additionalSpells Spells
+		currentState, additionalSpells = Move(&currentState, currentState.currentPos-dir)
+		spells += additionalSpells
+	}
+
+	return currentState, spells
+}
 
 // Spells to trigger the current letter.
 // e.g. >+[<.>+]< for A * 26

@@ -6,12 +6,27 @@ import (
 )
 
 func TestMove(t *testing.T) {
-	var state = NewState()
-	var newState, spells = Move(&state, 3)
-	if newState.currentPos != 3 {
-		t.Errorf("Move(&state, 3) = %d; want 3", newState.currentPos)
+	var tests = []struct {
+		name       string
+		currentPos int
+		nextPos    int
+		spells     string
+	}{
+		{"left to right", 0, 3, ">>>"},
+		{"left to right circle", 28, 0, ">>"},
+		{"right to left", 4, 1, "<<<"},
+		{"right to left circle", 1, 29, "<<"},
 	}
-	if spells != ">>>" {
-		t.Errorf("Move(&state, 3) = %s; want >>>", spells)
+
+	for _, tc := range tests {
+		var state = NewState()
+		state.currentPos = tc.currentPos
+		var newState, spells = Move(&state, tc.nextPos)
+		if newState.currentPos != tc.nextPos {
+			t.Errorf("Move(&state, %d) = %d; want %d", tc.nextPos, newState.currentPos, tc.nextPos)
+		}
+		if spells != tc.spells {
+			t.Errorf("Move(&state, %d) = %s; want %s", tc.nextPos, spells, tc.spells)
+		}
 	}
 }
